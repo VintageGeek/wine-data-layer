@@ -467,3 +467,6 @@ response = requests.post(
 ### Deployment Workflow (CRITICAL)
 16. **Always deploy to dev first** - Never deploy directly to production
 17. **Ask before deploying to prod** - Get explicit user approval after dev is verified
+
+### Git Workflow
+18. **Always pull before push** - Use `git pull --rebase && git push` to avoid rejection errors when remote has changes
