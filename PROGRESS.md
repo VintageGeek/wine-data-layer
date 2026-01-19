@@ -1,8 +1,8 @@
 # Wine Data Layer - Progress Tracker
 
-> **Last Updated:** 2026-01-19
-> **Current Phase:** Phase 3 - Data Migration (Complete via Sync)
-> **Overall Status:** 🟡 In Progress
+> **Last Updated:** 2026-01-19 (Session 7)
+> **Current Phase:** Phase 5 - Enrichment Pipeline
+> **Overall Status:** 🟢 Phase 4 Complete, Phase 5 Not Started
 
 ---
 
@@ -13,9 +13,25 @@
 | Phase 0: Planning & Documentation | 🟢 Complete | 100% |
 | Phase 1: Supabase Setup & Schema | 🟢 Complete | 100% |
 | Phase 2: CellarTracker Extraction | 🟢 Complete | 100% |
+| Phase 2.5: Sync Validation & Testing | 🟢 Complete | 100% |
 | Phase 3: Data Migration | 🟢 Complete | 100% |
-| Phase 4: Dashboard Integration | 🟡 In Progress | 0% |
+| Phase 3.5: Enrichment Data Migration | 🟢 Complete | 100% |
+| Phase 4: Dashboard Integration | 🟢 Complete | 100% |
 | Phase 5: Enrichment Pipeline | ⚪ Not Started | 0% |
+
+---
+
+## Plan Documentation Standard
+
+Each phase includes a **Plan** section (created before implementation) with:
+- **Problem Statement**: What and why
+- **Tasks**: Checkbox list
+- **Field/Data Mapping**: If applicable
+- **Edge Cases**: Known gotchas
+- **Success Criteria**: How to verify done
+- **Unresolved Questions**: Blockers needing answers
+
+Plans stay in this file alongside status. Review plan before approving implementation.
 
 ---
 
@@ -152,6 +168,81 @@ Parameters:
 
 ---
 
+## Phase 2.5: Sync Validation & Testing ✅
+
+### Problem Statement
+CT sync runs but no automated validation. Need:
+1. Post-sync data integrity checks
+2. Test results visible in dashboard
+3. Flag anomalies for user attention
+
+### Tasks
+- [x] Create `sync_results` table to store sync history + validation
+- [x] Add validation step to sync Edge Function (or create separate function)
+- [x] Create `validate-sync` Edge Function for on-demand validation (deferred - not needed)
+- [x] Add admin UI to dashboard settings.html showing:
+  - Last sync timestamp + status
+  - Validation results (pass/fail counts)
+  - Anomaly list (clickable)
+- [x] Write unit tests for CT sync helper functions (TypeScript/Deno)
+- [x] Fix validation pagination bug (>1000 rows)
+- [x] Add anon-read RLS policy for sync_results
+- [x] Test sync + validation end-to-end
+
+### Validation Checks
+| Check | Query | Severity |
+|-------|-------|----------|
+| Wine count matches | wines.count > 0 | Critical |
+| Bottle count matches | bottles.count > 0 | Critical |
+| Orphan bottles | bottles without matching wine | Error |
+| Location anomalies | location = 'none' or NULL | Warning |
+| Bin overcapacity | bin has > 6 bottles (in-stock) | Warning |
+| Encoding issues | wine_name contains replacement char | Warning |
+| Missing enrichments | in-stock wines without enrichment | Warning (deferred) |
+
+### Data Model Addition
+```sql
+CREATE TABLE sync_results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    synced_at TIMESTAMPTZ NOT NULL,
+    source TEXT NOT NULL, -- 'cellartracker'
+    status TEXT NOT NULL, -- 'success', 'partial', 'failed'
+    wines_synced INTEGER,
+    bottles_synced INTEGER,
+    validation JSONB, -- {checks: [{name, status, count, details}]}
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### Dashboard UI (settings.html)
+```
+┌─────────────────────────────────────┐
+│ Sync Status                         │
+├─────────────────────────────────────┤
+│ Last Sync: 2026-01-19 10:30 AM ✅   │
+│ Wines: 1,229 | Bottles: 2,373       │
+├─────────────────────────────────────┤
+│ Validation                          │
+│ ✅ Wine count OK                    │
+│ ✅ Bottle count OK                  │
+│ ⚠️ 1 location anomaly               │
+│ ⚠️ 804 wines missing enrichment     │
+└─────────────────────────────────────┘
+```
+
+### Decisions
+- ✅ Store validation in `sync_results` table (single table)
+- ✅ Run validation inside sync function (always runs)
+
+### Unresolved Questions
+- Include enrichment check? (deferred - decide later)
+
+### Blockers
+- None
+
+---
+
 ## Phase 3: Data Migration ✅
 
 ### Completed via Phase 2 Sync
@@ -169,46 +260,131 @@ No separate migration needed - fresh data pulled directly from CellarTracker.
 ### Notes
 - Original wine_collection.json had 425 wines (only in-stock)
 - CT sync pulled complete history including all consumed wines
-- Enrichments will be populated in Phase 5
+- Enrichments migrated in Phase 3.5
 
 ---
 
-## Phase 4: Dashboard Integration ⚪
+## Phase 3.5: Enrichment Data Migration ✅
+
+### Problem Statement
+The CT sync (Phase 2) pulled wine data from CellarTracker, but the **Gemini-generated enrichment data** from `wine_collection.json` was never migrated to the `wine_enrichments` table.
+
+**Final State:**
+| Table | Rows | Status |
+|-------|------|--------|
+| `wines` | 1,229 | ✅ Populated from CT |
+| `wine_enrichments` | 425 | ✅ Migrated from JSON |
+
+**Source Data:**
+- File: `data/backups/wine_collection.json`
+- Contains: 425 wines with full enrichment data
+- Generated by: Gemini AI (prior to this project)
 
 ### Tasks
-- [ ] Add Supabase JS client to dashboard
-- [ ] Update index.html data loading
-- [ ] Update mobile.html data loading
-- [ ] Migrate pull list from Firebase RTDB
-- [ ] Migrate settings from Firebase RTDB
-- [ ] Implement real-time subscriptions
-- [ ] Test on dev environment
-- [ ] Deploy to production
-- [ ] Decommission Firebase dependencies
+- [x] Create migration script `scripts/migrate_enrichments.py`
+- [x] Parse `wine_collection.json` and extract enrichment fields
+- [x] Map JSON fields to `wine_enrichments` table schema
+- [x] Validate wine IDs exist in `wines` table before insert
+- [x] Upsert enrichment data to Supabase
+- [x] Verify row count (expect 425 rows)
+- [x] Spot-check data integrity (tasting notes, pairings)
 
-### Files to Modify
-- `C:\Users\mikep\Desktop\dashboard\public\index.html`
-- `C:\Users\mikep\Desktop\dashboard\public\mobile.html`
-- `C:\Users\mikep\Desktop\dashboard\public\settings.html`
+### Field Mapping
+
+| JSON Field | Database Column | Type |
+|------------|-----------------|------|
+| `id` | `wine_id` (FK) | TEXT |
+| `tasting_notes.appearance` | `tasting_appearance` | TEXT |
+| `tasting_notes.nose` | `tasting_nose` | TEXT |
+| `tasting_notes.palate` | `tasting_palate` | TEXT |
+| `tasting_notes.finish` | `tasting_finish` | TEXT |
+| `tasting_notes.overall` | `tasting_overall` | TEXT |
+| `aroma_descriptors` | `aroma_descriptors` | TEXT[] |
+| `flavor_descriptors` | `flavor_descriptors` | TEXT[] |
+| `food_pairings` | `food_pairings` | JSONB |
+| `characteristics` | `characteristics` | JSONB |
+| `aging_potential` | `aging_potential` | TEXT |
+| `drink_from_year` | `drink_from_year` | TEXT |
+| `drink_by_year` | `drink_by_year` | TEXT |
+| `serving_suggestions` | `serving_suggestions` | JSONB |
+| `_augmentation_status` | `enrichment_status` | TEXT |
+| `_augmentation_timestamp` | `enriched_at` | TIMESTAMPTZ |
+| (hardcoded) | `model_version` | TEXT ("gemini-1.5-pro") |
+
+### Edge Cases to Handle
+
+1. **Wine ID mismatch**: JSON `id` must exist in `wines.ct_wine_id`
+   - Expected: All 425 should match (they were in-stock during JSON creation)
+   - Action: Log any mismatches, skip those records
+
+2. **Missing enrichment fields**: Some wines may have partial data
+   - Action: Allow NULLs for optional fields
+
+3. **Duplicate runs**: Script must be idempotent
+   - Action: Use UPSERT with `ON CONFLICT (wine_id) DO UPDATE`
+
+4. **Timestamp parsing**: `_augmentation_timestamp` is ISO format
+   - Example: `"2026-01-13T23:09:04.005821"`
+   - Action: Parse as TIMESTAMPTZ
+
+### Success Criteria
+- [x] `wine_enrichments` table has 425 rows
+- [x] All `wine_id` values have matching `wines.ct_wine_id`
+- [x] `v_wines_full` view returns enrichment data joined with wine data
+- [ ] Dashboard can display tasting notes for enriched wines (Phase 4)
+
+### Unresolved Questions
+- None
 
 ### Blockers
-- Depends on: Phase 1-3 complete
+- None (Phase 3 complete, source data available)
+
+---
+
+## Phase 4: Dashboard Integration ✅
+
+### Tasks
+- [x] Add Supabase JS client to dashboard (settings.html)
+- [x] Implement Supabase Auth + TOTP MFA (settings.html)
+- [x] Update index.html data loading (static JSON → Supabase)
+- [x] Update mobile.html data loading (static JSON → Supabase)
+- [x] Migrate pull list from Firebase RTDB → Supabase
+- [x] Migrate settings from Firebase RTDB → Supabase (demo mode)
+- [x] Implement real-time subscriptions (demo mode)
+- [x] Create dedicated login.html with MFA support
+- [x] Add navigation links between pages
+- [x] Test on dev environment
+- [x] Deploy to production
+- [x] Decommission Firebase dependencies (removed from all files)
+
+### Files to Modify
+- `C:\Users\mikep\Desktop\dashboard\public\index.html` - Wine data + pull list
+- `C:\Users\mikep\Desktop\dashboard\public\mobile.html` - Wine data + pull list
+- `C:\Users\mikep\Desktop\dashboard\public\settings.html` - ✅ Auth complete
+
+### Blockers
+- None
 
 ---
 
 ## Phase 5: Enrichment Pipeline ⚪
+
+### Requirements
+- **Only enrich in-stock wines** (quantity > 0)
+- Consumed/lost wines do NOT need enrichment
+- Query: `SELECT * FROM wines WHERE quantity > 0 AND ct_wine_id NOT IN (SELECT wine_id FROM wine_enrichments)`
 
 ### Tasks
 - [ ] Create enrichment script framework
 - [ ] Integrate Gemini API client
 - [ ] Implement batch enrichment logic
 - [ ] Add enrichment status tracking
-- [ ] Create trigger for new wines
+- [ ] Create trigger for new wines (in-stock only)
 - [ ] Test with sample wines
 - [ ] Document enrichment prompts and versioning
 
 ### Blockers
-- Depends on: Phase 3 (wines in database)
+- None (Phase 4 complete)
 
 ---
 
@@ -314,6 +490,129 @@ No separate migration needed - fresh data pulled directly from CellarTracker.
 2. ~~Run migrations~~ Done
 3. ~~Build CT extractor~~ Done
 4. Phase 4: Dashboard integration
+
+### 2026-01-19 - Enrichment Migration & Sync Validation (Session 4)
+**Session Focus:** Phase 3.5 enrichment migration, Phase 2.5 sync validation
+
+**Completed:**
+- Phase 3.5: Migrated 425 enrichments from wine_collection.json to Supabase
+- Created `scripts/migrate_enrichments.py` with testable functions
+- Added 21 unit tests for migration (`tests/test_migrate_enrichments.py`)
+- Phase 2.5: Created `sync_results` table for sync history + validation
+- Updated `sync-cellartracker` Edge Function with 6 validation checks:
+  - wine_count, bottle_count (critical)
+  - orphan_bottles (error)
+  - location_anomalies, bin_overcapacity, encoding_issues (warning)
+- Added 23 Deno unit tests for CT sync helpers
+- Added admin UI to dashboard `settings.html` showing sync status + validation
+
+**Key Files Created/Modified:**
+- `scripts/migrate_enrichments.py` - Enrichment migration (refactored for testing)
+- `tests/test_migrate_enrichments.py` - 21 tests
+- `sql/migrations/007_create_sync_results.sql` - Sync results table
+- `supabase/migrations/20260119000000_create_sync_results.sql` - Same for CLI
+- `supabase/functions/sync-cellartracker/index.ts` - Added validation
+- `supabase/functions/sync-cellartracker/index.test.ts` - 23 Deno tests
+- `C:\Users\mikep\Desktop\dashboard\public\settings.html` - Sync status UI
+
+**Not Yet Tested:**
+- Full sync with validation storage (interrupted)
+- Settings page sync status display in browser
+
+**Note:** settings.html has placeholder auth credentials `[USERNAME_HERE]`/`[PASSWORD_HERE]`
+
+**Next Session Should:**
+1. ~~Test sync + validation end-to-end~~ Done
+2. ~~Verify settings.html displays sync status~~ Done
+3. ~~Update PROGRESS.md Phase 2.5 tasks to complete~~ Done
+4. Begin Phase 4: Dashboard Integration
+
+### 2026-01-19 - Phase 2.5 Completion (Session 5)
+**Session Focus:** Complete Phase 2.5 sync validation
+
+**Completed:**
+- Tested sync + validation end-to-end
+- Fixed validation pagination bug (was only checking first 1000 rows)
+- Fixed orphan_bottles false positive (was reporting 106, actually 0)
+- Added anon-read RLS policy for sync_results table
+- Verified settings.html can fetch sync status via anon key
+- Deployed updated sync-cellartracker Edge Function
+- All 6 validation checks now pass correctly:
+  - wine_count: 1,229 (pass)
+  - bottle_count: 2,373 (pass)
+  - orphan_bottles: 0 (pass)
+  - location_anomalies: 1 (warning)
+  - bin_overcapacity: 2 (warning - Yellow box 29, Champagne box 2)
+  - encoding_issues: 0 (pass)
+
+**Key Files Modified:**
+- `supabase/functions/sync-cellartracker/index.ts` - Fixed pagination in validation
+- `sql/migrations/007_create_sync_results.sql` - Added anon-read policy
+- `supabase/migrations/20260119090000_sync_results_anon_read.sql` - Deployed policy
+
+**Next Session Should:**
+1. ~~Begin Phase 4: Dashboard Integration~~ Started (auth done)
+
+### 2026-01-19 - Supabase Auth + MFA (Session 6)
+**Session Focus:** Replace hardcoded credentials with Supabase Auth + TOTP MFA
+
+**Completed:**
+- Removed hardcoded credentials from settings.html
+- Implemented Supabase Auth email/password login
+- Added TOTP MFA enrollment flow (QR code + manual secret fallback)
+- Added TOTP MFA verification flow
+- Auto-cleanup of orphaned MFA factors on enrollment errors
+- Deployed and tested on Firebase dev instance
+
+**Auth Flow:**
+```
+Email/Password → Check MFA factors →
+  If none: Show QR enrollment → Verify code → Settings
+  If enrolled: Show TOTP input → Verify code → Settings
+```
+
+**Key Files Modified:**
+- `C:\Users\mikep\Desktop\dashboard\public\settings.html` - Full Supabase Auth + MFA
+
+**User Account:**
+- Email: sendmewine@outlook.com
+- MFA: TOTP enabled
+
+**Next Session Should:**
+1. ~~Continue Phase 4: Migrate wine data loading to Supabase~~ Done
+2. ~~Migrate pull list from Firebase RTDB to Supabase~~ Done
+3. ~~Deploy to production when ready~~ Done
+
+---
+
+### 2026-01-19 - Phase 4 Complete (Session 7)
+**Session Focus:** Complete Firebase → Supabase migration for dashboard
+
+**Completed:**
+- Created dedicated `login.html` with full MFA support
+- Migrated `index.html` to Supabase (wine data, pull list, demo mode)
+- Migrated `mobile.html` to Supabase (same changes)
+- Simplified `settings.html` (removed embedded login forms)
+- Added navigation links (settings gear in headers, back links)
+- Removed all Firebase dependencies from all files
+- Deployed to production
+
+**Key Files Created/Modified:**
+- `login.html` - New dedicated login page with MFA
+- `index.html` - Full Supabase migration
+- `mobile.html` - Full Supabase migration
+- `settings.html` - Simplified, Supabase-only
+
+**Data Sources Now:**
+- Wine data: `v_wines_full` view (Supabase)
+- Pull list: `pull_list_items` table (Supabase)
+- Demo mode: `app_settings` table (Supabase)
+- Auth: Supabase Auth + TOTP MFA
+
+**Next Session Should:**
+1. Phase 5: Build Gemini enrichment pipeline for new wines
+
+---
 
 ### 2026-01-19 - Supabase Setup & CT Sync (Session 3)
 **Session Focus:** Complete Phase 1, 2, 3

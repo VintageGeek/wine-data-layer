@@ -1,8 +1,8 @@
 // Supabase Edge Function: sync-cellartracker
-// Pulls wine data from CellarTracker and upserts to Supabase
+// Pulls wine data from CellarTracker, upserts to Supabase, validates data
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const CELLARTRACKER_URL = "https://www.cellartracker.com/xlquery.asp";
 
@@ -66,8 +66,17 @@ const CRITIC_SCORE_COLUMNS = [
   "WWR", "IWR", "CHG", "TT", "TWF", "DR", "FP", "JM", "PG", "WAL", "JS"
 ];
 
+// Validation check types
+interface ValidationCheck {
+  name: string;
+  status: "pass" | "fail" | "warning";
+  severity: "critical" | "error" | "warning";
+  count?: number;
+  details?: string[];
+}
+
 // Parse CSV (handles quoted fields with commas)
-function parseCSV(text: string): Record<string, string>[] {
+export function parseCSV(text: string): Record<string, string>[] {
   const lines = text.split(/\r?\n/).filter(line => line.trim());
   if (lines.length < 2) return [];
 
@@ -87,7 +96,7 @@ function parseCSV(text: string): Record<string, string>[] {
   return records;
 }
 
-function parseCSVLine(line: string): string[] {
+export function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -113,7 +122,7 @@ function parseCSVLine(line: string): string[] {
 }
 
 // Convert CT date format (M/D/YYYY) to ISO format
-function parseDate(dateStr: string): string | null {
+export function parseDate(dateStr: string): string | null {
   if (!dateStr || dateStr.trim() === "") return null;
   const parts = dateStr.split("/");
   if (parts.length === 3) {
@@ -124,14 +133,14 @@ function parseDate(dateStr: string): string | null {
 }
 
 // Parse numeric value
-function parseNumber(val: string): number | null {
+export function parseNumber(val: string): number | null {
   if (!val || val.trim() === "") return null;
   const num = parseFloat(val);
   return isNaN(num) ? null : num;
 }
 
 // Parse integer value
-function parseInt2(val: string): number | null {
+export function parseInt2(val: string): number | null {
   if (!val || val.trim() === "") return null;
   const num = parseInt(val, 10);
   return isNaN(num) ? null : num;
@@ -163,7 +172,7 @@ async function fetchCellarTracker(
 }
 
 // Map wine record from CT to database format
-function mapWineRecord(ctRecord: Record<string, string>): Record<string, unknown> {
+export function mapWineRecord(ctRecord: Record<string, string>): Record<string, unknown> {
   const wine: Record<string, unknown> = {};
 
   // Map standard fields
@@ -211,7 +220,7 @@ function mapWineRecord(ctRecord: Record<string, string>): Record<string, unknown
 }
 
 // Map bottle record from CT to database format
-function mapBottleRecord(ctRecord: Record<string, string>): Record<string, unknown> {
+export function mapBottleRecord(ctRecord: Record<string, string>): Record<string, unknown> {
   const bottle: Record<string, unknown> = {};
 
   for (const [ctField, dbField] of Object.entries(BOTTLE_FIELD_MAP)) {
@@ -237,8 +246,143 @@ function mapBottleRecord(ctRecord: Record<string, string>): Record<string, unkno
   return bottle;
 }
 
-// Main handler
-Deno.serve(async (req) => {
+// Run validation checks after sync
+async function runValidation(supabase: SupabaseClient): Promise<ValidationCheck[]> {
+  const checks: ValidationCheck[] = [];
+
+  // 1. Wine count > 0
+  const { count: wineCount } = await supabase
+    .from("wines")
+    .select("*", { count: "exact", head: true });
+
+  checks.push({
+    name: "wine_count",
+    status: (wineCount ?? 0) > 0 ? "pass" : "fail",
+    severity: "critical",
+    count: wineCount ?? 0,
+  });
+
+  // 2. Bottle count > 0
+  const { count: bottleCount } = await supabase
+    .from("bottles")
+    .select("*", { count: "exact", head: true });
+
+  checks.push({
+    name: "bottle_count",
+    status: (bottleCount ?? 0) > 0 ? "pass" : "fail",
+    severity: "critical",
+    count: bottleCount ?? 0,
+  });
+
+  // 3. Orphan bottles (bottles without matching wine)
+  // Fetch all wine IDs with pagination (to handle >1000 rows)
+  const allWineIds = new Set<string>();
+  let wineOffset = 0;
+  while (true) {
+    const { data: winesBatch } = await supabase
+      .from("wines")
+      .select("ct_wine_id")
+      .range(wineOffset, wineOffset + 999);
+    if (!winesBatch || winesBatch.length === 0) break;
+    for (const w of winesBatch) {
+      allWineIds.add(w.ct_wine_id);
+    }
+    if (winesBatch.length < 1000) break;
+    wineOffset += 1000;
+  }
+
+  // Fetch all bottle wine_ids with pagination
+  const orphans: { wine_id: string }[] = [];
+  let bottleOffset = 0;
+  while (true) {
+    const { data: bottlesBatch } = await supabase
+      .from("bottles")
+      .select("wine_id")
+      .range(bottleOffset, bottleOffset + 999);
+    if (!bottlesBatch || bottlesBatch.length === 0) break;
+    for (const b of bottlesBatch) {
+      if (!allWineIds.has(b.wine_id)) {
+        orphans.push(b);
+      }
+    }
+    if (bottlesBatch.length < 1000) break;
+    bottleOffset += 1000;
+  }
+
+  checks.push({
+    name: "orphan_bottles",
+    status: orphans.length === 0 ? "pass" : "fail",
+    severity: "error",
+    count: orphans.length,
+    details: orphans.length > 0 ? orphans.slice(0, 5).map(b => b.wine_id) : undefined,
+  });
+
+  // 4. Location anomalies (in-stock bottles with location = 'none' or empty)
+  const { data: locationIssues } = await supabase
+    .from("bottles")
+    .select("ct_bottle_id, location")
+    .eq("bottle_state", 1)
+    .or("location.eq.none,location.is.null,location.eq.");
+
+  checks.push({
+    name: "location_anomalies",
+    status: (locationIssues?.length ?? 0) === 0 ? "pass" : "warning",
+    severity: "warning",
+    count: locationIssues?.length ?? 0,
+  });
+
+  // 5. Bin overcapacity (bins with > 6 in-stock bottles)
+  // Fetch all in-stock bottles with pagination
+  const binCounts = new Map<string, number>();
+  let binOffset = 0;
+  while (true) {
+    const { data: binBatch } = await supabase
+      .from("bottles")
+      .select("location, bin")
+      .eq("bottle_state", 1)
+      .range(binOffset, binOffset + 999);
+    if (!binBatch || binBatch.length === 0) break;
+    for (const bottle of binBatch) {
+      if (bottle.location && bottle.bin) {
+        const key = `${bottle.location}:${bottle.bin}`;
+        binCounts.set(key, (binCounts.get(key) ?? 0) + 1);
+      }
+    }
+    if (binBatch.length < 1000) break;
+    binOffset += 1000;
+  }
+
+  const overcapacityBins = Array.from(binCounts.entries())
+    .filter(([_, count]) => count > 6)
+    .map(([bin, count]) => `${bin} (${count})`);
+
+  checks.push({
+    name: "bin_overcapacity",
+    status: overcapacityBins.length === 0 ? "pass" : "warning",
+    severity: "warning",
+    count: overcapacityBins.length,
+    details: overcapacityBins.length > 0 ? overcapacityBins.slice(0, 10) : undefined,
+  });
+
+  // 6. Encoding issues (wine names with replacement character)
+  const { data: encodingIssues } = await supabase
+    .from("wines")
+    .select("ct_wine_id, wine_name")
+    .like("wine_name", "%�%");
+
+  checks.push({
+    name: "encoding_issues",
+    status: (encodingIssues?.length ?? 0) === 0 ? "pass" : "warning",
+    severity: "warning",
+    count: encodingIssues?.length ?? 0,
+    details: encodingIssues?.slice(0, 5).map(w => w.wine_name),
+  });
+
+  return checks;
+}
+
+// Main handler function (exported for testing)
+export async function handleRequest(req: Request): Promise<Response> {
   // CORS headers
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -248,6 +392,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  const syncedAt = new Date().toISOString();
+  let supabase: SupabaseClient | null = null;
 
   try {
     // Get credentials from secrets
@@ -265,7 +412,7 @@ Deno.serve(async (req) => {
     }
 
     // Create Supabase client with service role
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     console.log("Fetching wine list from CellarTracker...");
 
@@ -287,7 +434,6 @@ Deno.serve(async (req) => {
     const bottles = bottleRecords.map(mapBottleRecord).filter(b => b.ct_bottle_id && b.wine_id);
 
     // Get unique wine IDs from bottles (for wines not in List but have bottles)
-    const wineIdsFromBottles = new Set(bottles.map(b => b.wine_id as string));
     const wineIdsFromList = new Set(wines.map(w => w.ct_wine_id as string));
 
     // Create minimal wine records for any wines in bottles but not in list
@@ -359,6 +505,15 @@ Deno.serve(async (req) => {
       bottlesUpserted += batch.length;
     }
 
+    // Run validation checks
+    console.log("Running validation checks...");
+    const validationChecks = await runValidation(supabase);
+
+    // Determine overall status
+    const hasCriticalFail = validationChecks.some(c => c.severity === "critical" && c.status === "fail");
+    const hasError = validationChecks.some(c => c.severity === "error" && c.status === "fail");
+    const overallStatus = hasCriticalFail ? "failed" : hasError ? "partial" : "success";
+
     // Get final counts
     const { count: totalWines } = await supabase
       .from("wines")
@@ -373,9 +528,24 @@ Deno.serve(async (req) => {
       .select("*", { count: "exact", head: true })
       .eq("bottle_state", 1);
 
+    // Store sync result
+    const { error: insertError } = await supabase.from("sync_results").insert({
+      synced_at: syncedAt,
+      source: "cellartracker",
+      status: overallStatus,
+      wines_synced: winesUpserted,
+      bottles_synced: bottlesUpserted,
+      validation: { checks: validationChecks },
+    });
+
+    if (insertError) {
+      console.error("Failed to store sync result:", insertError);
+    }
+
     const result = {
       success: true,
-      synced_at: new Date().toISOString(),
+      synced_at: syncedAt,
+      status: overallStatus,
       wines_upserted: winesUpserted,
       bottles_upserted: bottlesUpserted,
       totals: {
@@ -384,6 +554,7 @@ Deno.serve(async (req) => {
         in_stock: inStockBottles,
         consumed: (totalBottles ?? 0) - (inStockBottles ?? 0),
       },
+      validation: validationChecks,
     };
 
     console.log("Sync complete:", result);
@@ -394,6 +565,23 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error("Sync error:", error);
+
+    // Store failed sync result
+    if (supabase) {
+      try {
+        await supabase.from("sync_results").insert({
+          synced_at: syncedAt,
+          source: "cellartracker",
+          status: "failed",
+          wines_synced: 0,
+          bottles_synced: 0,
+          error_message: error instanceof Error ? error.message : "Unknown error",
+        });
+      } catch (insertErr) {
+        console.error("Failed to store error result:", insertErr);
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: false,
@@ -405,4 +593,9 @@ Deno.serve(async (req) => {
       }
     );
   }
-});
+}
+
+// Start server when run directly (not when imported for tests)
+if (import.meta.main) {
+  Deno.serve(handleRequest);
+}

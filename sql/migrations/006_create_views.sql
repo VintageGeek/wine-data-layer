@@ -87,15 +87,16 @@ LEFT JOIN wine_enrichments e ON w.ct_wine_id = e.wine_id;
 
 
 -- ===========================================
--- v_wines_pending_enrichment: Wines needing AI enrichment
+-- v_wines_pending_enrichment: In-stock wines needing AI enrichment
 -- ===========================================
 CREATE OR REPLACE VIEW v_wines_pending_enrichment AS
 SELECT w.*
 FROM wines w
 LEFT JOIN wine_enrichments e ON w.ct_wine_id = e.wine_id
-WHERE e.wine_id IS NULL
-   OR e.enrichment_status = 'pending'
-   OR e.enrichment_status = 'failed';
+WHERE w.quantity > 0
+  AND (e.wine_id IS NULL
+       OR e.enrichment_status = 'pending'
+       OR e.enrichment_status = 'failed');
 
 
 -- ===========================================
