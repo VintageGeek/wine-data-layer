@@ -8,6 +8,7 @@ import {
   parseInt2,
   mapWineRecord,
   mapBottleRecord,
+  getBinCapacity,
 } from "./index.ts";
 
 Deno.test("parseCSVLine - simple fields", () => {
@@ -180,4 +181,42 @@ Deno.test("mapBottleRecord - parses dates", () => {
   const result = mapBottleRecord(ct);
   assertEquals(result.purchase_date, "2022-03-10");
   assertEquals(result.consumed_date, "2025-01-05");
+});
+
+// getBinCapacity tests
+Deno.test("getBinCapacity - 6-bottle columns (A,B,C,F,G,H)", () => {
+  assertEquals(getBinCapacity("A1"), 6);
+  assertEquals(getBinCapacity("A19"), 6);
+  assertEquals(getBinCapacity("B5"), 6);
+  assertEquals(getBinCapacity("C12"), 6);
+  assertEquals(getBinCapacity("F1"), 6);
+  assertEquals(getBinCapacity("G10"), 6);
+  assertEquals(getBinCapacity("H7"), 6);
+});
+
+Deno.test("getBinCapacity - 4-bottle columns (D,I)", () => {
+  assertEquals(getBinCapacity("D1"), 4);
+  assertEquals(getBinCapacity("D15"), 4);
+  assertEquals(getBinCapacity("I5"), 4);
+  assertEquals(getBinCapacity("I19"), 4);
+});
+
+Deno.test("getBinCapacity - 2-bottle columns (E,J)", () => {
+  assertEquals(getBinCapacity("E1"), 2);
+  assertEquals(getBinCapacity("E10"), 2);
+  assertEquals(getBinCapacity("J1"), 2);
+  assertEquals(getBinCapacity("J19"), 2);
+});
+
+Deno.test("getBinCapacity - lowercase columns", () => {
+  assertEquals(getBinCapacity("a1"), 6);
+  assertEquals(getBinCapacity("d5"), 4);
+  assertEquals(getBinCapacity("e10"), 2);
+});
+
+Deno.test("getBinCapacity - unknown/invalid returns default 6", () => {
+  assertEquals(getBinCapacity(""), 6);
+  assertEquals(getBinCapacity("X1"), 6);
+  assertEquals(getBinCapacity("1"), 6);
+  assertEquals(getBinCapacity("Yellow box"), 6);
 });

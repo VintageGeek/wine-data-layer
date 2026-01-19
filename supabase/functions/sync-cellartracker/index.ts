@@ -6,6 +6,40 @@ import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const CELLARTRACKER_URL = "https://www.cellartracker.com/xlquery.asp";
 
+// Bin capacity rules based on cellar storage layout
+// Grid shelving: Columns A-E (left section) and F-J (right section), rows 1-19
+// Overflow storage: Boxes above shelving (any bin not matching [A-J][1-19])
+const GRID_CAPACITIES: Record<string, number> = {
+  A: 6, B: 6, C: 6, D: 4, E: 2,
+  F: 6, G: 6, H: 6, I: 4, J: 2,
+};
+const OVERFLOW_BOX_CAPACITY = 12;
+// Storage names with no capacity limit (collections of multiple containers)
+const NO_LIMIT_STORAGE = ["yellow box"];
+
+// Check if bin is grid shelving (pattern: [A-J][1-19])
+export function isGridBin(bin: string): boolean {
+  if (!bin || bin.length < 2) return false;
+  const match = bin.match(/^([A-Ja-j])(\d+)$/);
+  if (!match) return false;
+  const row = parseInt(match[2], 10);
+  return row >= 1 && row <= 19;
+}
+
+// Get bin capacity from bin name
+// Grid bins (A1-J19): column-specific capacity (6/4/2)
+// No-limit storage: unlimited (returns 999)
+// Overflow boxes (anything else): 12 bottles max
+export function getBinCapacity(bin: string): number {
+  if (!bin) return OVERFLOW_BOX_CAPACITY;
+  if (NO_LIMIT_STORAGE.includes(bin.toLowerCase())) return 999;
+  if (isGridBin(bin)) {
+    const column = bin.charAt(0).toUpperCase();
+    return GRID_CAPACITIES[column] ?? 6;
+  }
+  return OVERFLOW_BOX_CAPACITY;
+}
+
 // Field mappings: CellarTracker CSV -> Database columns
 const WINE_FIELD_MAP: Record<string, string> = {
   iWine: "ct_wine_id",
@@ -331,9 +365,10 @@ async function runValidation(supabase: SupabaseClient): Promise<ValidationCheck[
     count: locationIssues?.length ?? 0,
   });
 
-  // 5. Bin overcapacity (bins with > 6 in-stock bottles)
+  // 5. Bin overcapacity (bins exceeding column-specific capacity)
+  // Capacities: A,B,C,F,G,H = 6 | D,I = 4 | E,J = 2
   // Fetch all in-stock bottles with pagination
-  const binCounts = new Map<string, number>();
+  const binCounts = new Map<string, { count: number; capacity: number }>();
   let binOffset = 0;
   while (true) {
     const { data: binBatch } = await supabase
@@ -345,7 +380,12 @@ async function runValidation(supabase: SupabaseClient): Promise<ValidationCheck[
     for (const bottle of binBatch) {
       if (bottle.location && bottle.bin) {
         const key = `${bottle.location}:${bottle.bin}`;
-        binCounts.set(key, (binCounts.get(key) ?? 0) + 1);
+        const existing = binCounts.get(key);
+        if (existing) {
+          existing.count++;
+        } else {
+          binCounts.set(key, { count: 1, capacity: getBinCapacity(bottle.bin) });
+        }
       }
     }
     if (binBatch.length < 1000) break;
@@ -353,8 +393,8 @@ async function runValidation(supabase: SupabaseClient): Promise<ValidationCheck[
   }
 
   const overcapacityBins = Array.from(binCounts.entries())
-    .filter(([_, count]) => count > 6)
-    .map(([bin, count]) => `${bin} (${count})`);
+    .filter(([_, data]) => data.count > data.capacity)
+    .map(([bin, data]) => `${bin} (${data.count}/${data.capacity})`);
 
   checks.push({
     name: "bin_overcapacity",

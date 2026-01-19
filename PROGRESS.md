@@ -1,6 +1,6 @@
 # Wine Data Layer - Progress Tracker
 
-> **Last Updated:** 2026-01-19 (Session 7)
+> **Last Updated:** 2026-01-19 (Session 9)
 > **Current Phase:** Phase 5 - Enrichment Pipeline
 > **Overall Status:** 🟢 Phase 4 Complete, Phase 5 Not Started
 
@@ -196,7 +196,7 @@ CT sync runs but no automated validation. Need:
 | Bottle count matches | bottles.count > 0 | Critical |
 | Orphan bottles | bottles without matching wine | Error |
 | Location anomalies | location = 'none' or NULL | Warning |
-| Bin overcapacity | bin has > 6 bottles (in-stock) | Warning |
+| Bin overcapacity | bin exceeds column capacity (A-C,F-H:6, D,I:4, E,J:2) | Warning |
 | Encoding issues | wine_name contains replacement char | Warning |
 | Missing enrichments | in-stock wines without enrichment | Warning (deferred) |
 
@@ -733,6 +733,74 @@ POST https://jxidqettmqneswsuevoc.supabase.co/functions/v1/sync-cellartracker
 - CT sync stays fast and simple
 - Enrichment can run in background without timeouts
 - Stays on Supabase free tier (pg_cron requires Pro)
+
+### 2026-01-19 - Bin Capacity Validation (Session 8)
+**Session Focus:** Column-specific bin capacity rules
+
+**Completed:**
+- Added cellar storage rules config (`config/cellar_storage_rules.json`)
+- Updated sync validation to use column-specific capacities:
+  - A,B,C,F,G,H = 6 bottles
+  - D,I = 4 bottles
+  - E,J = 2 bottles
+- Added `getBinCapacity()` function to sync Edge Function
+- Added 5 Deno tests for bin capacity logic
+- Updated dashboard `index.html` with bin warning indicators:
+  - Wines in overcapacity bins show orange `!` badge
+  - Row highlights with orange background
+  - Hover tooltip shows "Bin X has Y/Z bottles"
+
+**Key Files Modified:**
+- `config/cellar_storage_rules.json` - Physical cellar layout definition
+- `supabase/functions/sync-cellartracker/index.ts` - Column-specific capacity logic
+- `supabase/functions/sync-cellartracker/index.test.ts` - Bin capacity tests
+- `C:\Users\mikep\Desktop\dashboard\public\index.html` - Bin warning UI
+
+**Next Session Should:**
+1. Run Deno tests (requires Deno install)
+2. Test sync function with new validation
+3. Verify dashboard warnings display correctly
+
+**Also Completed (Session 8 continued):**
+- Removed MFA/TOTP from all pages (overkill for personal project)
+- Simplified login.html to email/password only
+- Removed MFA checks from index.html, mobile.html, settings.html
+- Deployed sync function and dashboard to dev
+
+---
+
+### 2026-01-19 - Overcapacity & Bin Features (Session 9)
+**Session Focus:** Bin location display, overcapacity filtering, pull list improvements
+
+**Completed:**
+- Fixed sync function auth (added `apikey` header requirement)
+- Added clickable overcapacity banner to index.html and mobile.html
+  - Shows count of wines in over-capacity bins
+  - Click to filter, click again to clear
+- Added Bin column to wine table in index.html (sortable)
+- Fixed location/bin display - now fetched from bottles table (not wines)
+  - Wines in single bin show bin name
+  - Wines in multiple bins show "Multiple"
+- Pull list now shows correct bin using natural sort (A9 < A10)
+- Pull list max qty capped at bin-specific bottle count (not total)
+- Updated CLAUDE.md with deployment pitfalls:
+  - Supabase CLI requires sourcing .env for access token
+  - Edge Functions need both Authorization AND apikey headers
+  - Firebase hosting requires explicit target (`:dev` or `:prod`)
+
+**Key Files Modified:**
+- `login.html` - Simplified to email/password only
+- `index.html` - Overcapacity banner, bin column, bottle-level location data
+- `mobile.html` - Overcapacity banner, bottle-level location data
+- `settings.html` - Fixed sync auth headers
+- `CLAUDE.md` - Added deployment pitfalls
+
+**Technical Notes:**
+- `wineLocations` Map tracks all bins per wine with counts
+- `naturalBinSort()` function for A1 < A9 < A10 ordering
+- `firstBin` property provides alphabetically-first bin for pull list
+
+---
 
 ### ADR-008: Authenticated Access Only
 **Status:** Accepted

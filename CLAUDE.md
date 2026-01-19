@@ -244,12 +244,6 @@ async function checkAuthAndInit() {
         window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.pathname.split('/').pop());
         return;
     }
-    // Check MFA level
-    const { data: aalData } = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aalData.currentLevel !== 'aal2') {
-        window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.pathname.split('/').pop());
-        return;
-    }
     // Now load data...
 }
 
@@ -467,3 +461,9 @@ response = requests.post(
 )
 ```
 13. **Python venv on Windows** - Don't use `source .venv/Scripts/activate` in bash; use `python` directly if it's in PATH
+14. **Supabase CLI auth** - CLI requires `SUPABASE_ACCESS_TOKEN`. Source .env first: `set -a && source .env && set +a && npx supabase ...`
+15. **Edge Function auth** - Calling Edge Functions requires BOTH `Authorization: Bearer <jwt>` AND `apikey: <anon_key>` headers
+
+### Deployment Workflow (CRITICAL)
+16. **Always deploy to dev first** - Never deploy directly to production
+17. **Ask before deploying to prod** - Get explicit user approval after dev is verified

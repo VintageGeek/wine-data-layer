@@ -1,0 +1,120 @@
+{
+  "cellar_name": "Mike's Wine Cellar",
+  "description": "Wooden grid wine storage with two mirrored sections",
+  "last_updated": "2026-01-19",
+  
+  "physical_layout": {
+    "structure": "Two wooden rack sections facing each other",
+    "section_1": {
+      "name": "Left Section",
+      "columns": ["A", "B", "C", "D", "E"],
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      "total_bins": 95
+    },
+    "section_2": {
+      "name": "Right Section", 
+      "columns": ["F", "G", "H", "I", "J"],
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      "total_bins": 95
+    },
+    "addressing": {
+      "format": "{column}{row}",
+      "examples": ["A1", "B12", "F19", "J7"],
+      "columns_are": "letters A-J",
+      "rows_are": "numbers 1-19"
+    }
+  },
+
+  "mirror_pairs": {
+    "description": "Columns are mirrored between sections - same capacity on each side",
+    "pairs": [
+      {"section_1": "A", "section_2": "F"},
+      {"section_1": "B", "section_2": "G"},
+      {"section_1": "C", "section_2": "H"},
+      {"section_1": "D", "section_2": "I"},
+      {"section_1": "E", "section_2": "J"}
+    ]
+  },
+
+  "bin_capacities": {
+    "description": "Maximum bottles per bin, by column",
+    "grid_shelving": {
+      "description": "Wooden grid bins follow pattern [A-J][1-19]",
+      "capacities": {
+        "A": 6,
+        "B": 6,
+        "C": 6,
+        "D": 4,
+        "E": 2,
+        "F": 6,
+        "G": 6,
+        "H": 6,
+        "I": 4,
+        "J": 2
+      },
+      "capacity_groups": {
+        "6_bottle_columns": ["A", "B", "C", "F", "G", "H"],
+        "4_bottle_columns": ["D", "I"],
+        "2_bottle_columns": ["E", "J"]
+      }
+    },
+    "overflow_storage": {
+      "description": "Open space above shelving for boxes - any bin not matching [A-J][1-19]",
+      "max_per_box": 12,
+      "examples": ["Champagne box 2", "Reserve case"]
+    },
+    "no_limit_storage": {
+      "description": "Collections of multiple containers tracked under one name - no capacity limit",
+      "names": ["Yellow box"],
+      "notes": "Yellow box is a collection of 6-pack Cayuse boxes stored together"
+    }
+  },
+
+  "total_capacity": {
+    "section_1": {
+      "A": 114,
+      "B": 114,
+      "C": 114,
+      "D": 76,
+      "E": 38,
+      "subtotal": 456
+    },
+    "section_2": {
+      "F": 114,
+      "G": 114,
+      "H": 114,
+      "I": 76,
+      "J": 38,
+      "subtotal": 456
+    },
+    "total_bottles": 912
+  },
+
+  "validation_rules": {
+    "anomaly_detection": {
+      "overflow": "Flag any bin where bottle count > column capacity",
+      "empty_check": "Bins with 0 bottles are valid (empty space)",
+      "valid_range": "0 <= bottles <= capacity[column]"
+    },
+    "bin_validation": {
+      "valid_columns": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
+      "valid_rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      "invalid_bins": "Any bin not matching pattern [A-J][1-19]"
+    }
+  },
+
+  "data_source_notes": {
+    "primary_source": "CellarTracker",
+    "export_filter": "IMPORTANT: Export must use 'In Stock' filter only, not 'All'",
+    "bin_field": "Location or Bin field in CellarTracker",
+    "quantity_field": "Quantity field - represents bottles currently in cellar",
+    "stale_data_warning": "CSV/JSON exports can become stale as wines are consumed"
+  },
+
+  "helper_functions": {
+    "get_capacity": "capacity = capacities[bin[0]]  # First char is column",
+    "parse_bin": "column = bin[0], row = int(bin[1:])",
+    "is_overflow": "quantity > capacities[column]",
+    "overflow_amount": "quantity - capacities[column]"
+  }
+}
