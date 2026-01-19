@@ -126,8 +126,8 @@ print("\n[CLEANUP] Removing test data...")
 try:
     service_client.table("wines").delete().eq("ct_wine_id", "TEST_SECURITY_001").execute()
     print("  Done")
-except:
-    pass
+except Exception as e:
+    print(f"  Warning: cleanup failed - {e}")
 
 # ===========================================
 # SUMMARY
