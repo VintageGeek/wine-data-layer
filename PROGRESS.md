@@ -623,6 +623,10 @@ Email/Password → Check MFA factors →
 - Pending enrichment: 0 (all current wines covered)
 - Phase 5 only needed for future wines from CT sync
 
+**Documentation:**
+- Added README.md to both repos
+- Updated CLAUDE.md with session learnings (auth patterns, pitfalls)
+
 **Next Session Should:**
 1. Phase 5: Build Gemini enrichment pipeline for new wines (when needed)
 
