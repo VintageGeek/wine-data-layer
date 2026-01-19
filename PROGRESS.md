@@ -595,13 +595,21 @@ Email/Password → Check MFA factors →
 - Simplified `settings.html` (removed embedded login forms)
 - Added navigation links (settings gear in headers, back links)
 - Removed all Firebase dependencies from all files
+- Added sync confirmation dialog
+- Fixed auth redirect bugs (missing redirect params)
+- Fixed back link to return to mobile when coming from mobile
 - Deployed to production
+- Updated `v_wines_pending_enrichment` view to filter in-stock only
+- Verified all 425 in-stock wines already have enrichment (0 pending)
+- Updated Phase 5 requirements: only in-stock wines need enrichment
+- Used Python + Supabase Management API to run SQL updates
 
 **Key Files Created/Modified:**
 - `login.html` - New dedicated login page with MFA
 - `index.html` - Full Supabase migration
 - `mobile.html` - Full Supabase migration
 - `settings.html` - Simplified, Supabase-only
+- `sql/migrations/006_create_views.sql` - Updated view filter
 
 **Data Sources Now:**
 - Wine data: `v_wines_full` view (Supabase)
@@ -609,8 +617,14 @@ Email/Password → Check MFA factors →
 - Demo mode: `app_settings` table (Supabase)
 - Auth: Supabase Auth + TOTP MFA
 
+**Enrichment Status:**
+- In-stock wines: 425
+- Enriched wines: 425
+- Pending enrichment: 0 (all current wines covered)
+- Phase 5 only needed for future wines from CT sync
+
 **Next Session Should:**
-1. Phase 5: Build Gemini enrichment pipeline for new wines
+1. Phase 5: Build Gemini enrichment pipeline for new wines (when needed)
 
 ---
 
