@@ -1,7 +1,7 @@
 # Wine Data Layer - Progress Tracker
 
-> **Last Updated:** 2026-01-18
-> **Current Phase:** Phase 2 - CellarTracker Extraction
+> **Last Updated:** 2026-01-19
+> **Current Phase:** Phase 3 - Data Migration (Complete via Sync)
 > **Overall Status:** 🟡 In Progress
 
 ---
@@ -12,9 +12,9 @@
 |-------|--------|----------|
 | Phase 0: Planning & Documentation | 🟢 Complete | 100% |
 | Phase 1: Supabase Setup & Schema | 🟢 Complete | 100% |
-| Phase 2: CellarTracker Extraction | 🟡 In Progress | 0% |
-| Phase 3: Data Migration | ⚪ Not Started | 0% |
-| Phase 4: Dashboard Integration | ⚪ Not Started | 0% |
+| Phase 2: CellarTracker Extraction | 🟢 Complete | 100% |
+| Phase 3: Data Migration | 🟢 Complete | 100% |
+| Phase 4: Dashboard Integration | 🟡 In Progress | 0% |
 | Phase 5: Enrichment Pipeline | ⚪ Not Started | 0% |
 
 ---
@@ -100,21 +100,26 @@
 
 ---
 
-## Phase 2: CellarTracker Extraction 🟡
+## Phase 2: CellarTracker Extraction ✅
 
 ### Tasks
-- [ ] Set up Supabase CLI locally
-- [ ] Create Edge Function `sync-cellartracker`
-- [ ] Implement xlquery.asp API client (TypeScript)
-- [ ] Handle CSV parsing with proper encoding (latin-1)
-- [ ] Map CT fields to database schema
-- [ ] Pull Table=Bottles (primary - has consumption history)
-- [ ] Pull Table=List (for critic scores)
-- [ ] Implement upsert logic (wines + bottles tables)
-- [ ] Store CT credentials in Supabase secrets
-- [ ] Add sync status tracking
-- [ ] Test end-to-end from dashboard
-- [ ] Create extractor documentation
+- [x] Set up Supabase CLI locally (via npx)
+- [x] Create Edge Function `sync-cellartracker`
+- [x] Implement xlquery.asp API client (TypeScript)
+- [x] Handle CSV parsing with proper encoding (windows-1252)
+- [x] Map CT fields to database schema
+- [x] Pull Table=Bottles (primary - has consumption history)
+- [x] Pull Table=List (for critic scores)
+- [x] Implement upsert logic (wines + bottles tables)
+- [x] Store CT credentials in Supabase secrets
+- [x] Deploy and test function
+- [ ] Test from dashboard settings page (Phase 4)
+
+### Completed
+- **Edge Function:** `sync-cellartracker` deployed
+- **Endpoint:** `POST https://jxidqettmqneswsuevoc.supabase.co/functions/v1/sync-cellartracker`
+- **First sync results:** 1,229 wines, 2,373 bottles (878 in stock, 1,495 consumed)
+- **Handles:** Latin-1 encoding, consumed wines missing from List, batch upserts
 
 ### Architecture
 ```
@@ -147,26 +152,24 @@ Parameters:
 
 ---
 
-## Phase 3: Data Migration ⚪
+## Phase 3: Data Migration ✅
 
-### Tasks
-- [ ] Create initial data loader script
-- [ ] Implement batch upsert (100-200 records/batch)
-- [ ] Migrate wines table from wine_collection.json
-- [ ] Migrate enrichments from wine_collection.json
-- [ ] Validate data integrity (counts match)
-- [ ] Test conflict resolution (upsert on ct_wine_id)
-- [ ] Document migration process
+### Completed via Phase 2 Sync
+Data migration was completed automatically by running the CT sync Edge Function.
+No separate migration needed - fresh data pulled directly from CellarTracker.
 
-### Data Counts to Verify
-| Source | Expected |
-|--------|----------|
-| Total wines | 425 |
-| Total bottles | 878 |
-| Enriched wines | 425 (all have augmentation) |
+### Final Data Counts
+| Metric | Count |
+|--------|-------|
+| Total wines | 1,229 |
+| Total bottles | 2,373 |
+| In stock | 878 |
+| Consumed | 1,495 |
 
-### Blockers
-- Depends on: Phase 1 (tables exist), Phase 2 (extractor working)
+### Notes
+- Original wine_collection.json had 425 wines (only in-stock)
+- CT sync pulled complete history including all consumed wines
+- Enrichments will be populated in Phase 5
 
 ---
 
