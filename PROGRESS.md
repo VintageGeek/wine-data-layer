@@ -310,11 +310,49 @@ No separate migration needed - fresh data pulled directly from CellarTracker.
 - `C:\Users\mikep\Desktop\dashboard\CLAUDE.md` - Added data layer reference
 
 **Next Session Should:**
-1. Create Supabase project
-2. Run migrations in order (001-006)
-3. Apply RLS policies
-4. Load initial data from CSVs
-5. Test queries against v_wines_full view
+1. ~~Create Supabase project~~ Done
+2. ~~Run migrations~~ Done
+3. ~~Build CT extractor~~ Done
+4. Phase 4: Dashboard integration
+
+### 2026-01-19 - Supabase Setup & CT Sync (Session 3)
+**Session Focus:** Complete Phase 1, 2, 3
+
+**Completed:**
+- Created Supabase project: https://jxidqettmqneswsuevoc.supabase.co
+- Ran all migrations (5 tables, 7 views)
+- Configured RLS for authenticated-only access (protects valuations)
+- Created auth user for dashboard login
+- Stored CT credentials as Supabase secrets
+- Built and deployed Edge Function: `sync-cellartracker`
+- First sync: 1,229 wines, 2,373 bottles (878 in stock, 1,495 consumed)
+- Set up GitHub repo: https://github.com/VintageGeek/wine-data-layer
+
+**Key Files Created:**
+- `supabase/functions/sync-cellartracker/index.ts` - CT sync Edge Function
+- `scripts/verify_schema.py` - Schema verification
+- `scripts/validate_security.py` - RLS security validation
+- `sql/run_all_migrations.sql` - Combined migration script
+- `sql/policies/rls_authenticated.sql` - Auth-required policies
+
+**Architecture Decisions:**
+- ADR-006: Supabase Edge Functions for CT sync (TypeScript)
+- ADR-007: Separate enrichment from sync (LLM calls need different approach)
+- ADR-008: Authenticated access only (protects wine valuations)
+
+**Credentials Stored:**
+- `.env` - Local dev (Supabase keys, CT creds, CLI token)
+- Supabase Secrets - CT credentials for Edge Function
+
+**Sync Endpoint:**
+```
+POST https://jxidqettmqneswsuevoc.supabase.co/functions/v1/sync-cellartracker
+```
+
+**Next Session Should:**
+1. Phase 4: Update dashboard to use Supabase
+2. Add sync button to dashboard settings page
+3. Test authenticated data access
 
 ---
 
