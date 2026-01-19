@@ -1,6 +1,23 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code when working with the wine-data-layer project.
+## Interactions
+
+- in all interactions and commit messages, be extremely concise and sacrifice for the sake of concision. when embarking on a new phase that has not be planned out, create a plan first and document it for review. Store plan references where it makes sense.
+
+## Plans
+
+- Store all phase plans in `PROGRESS.md` (see "Plan Documentation Standard" section)
+- At the end of each plan, list unresolved questions if any. Be extremely concise.
+
+## Coding
+- Ensure you are following all instructions in your context for design principles and best practices.
+
+## Test Cases
+- Ensure you are creating test cases for your implementations.  Lookup testing best practices for the type of project(s) you are working on and ensure they pass. TDD is preferred.  Understand test case coverage and let the user know where the coverage is not worh the effort (diminishing returns)
+
+## Python
+- Always run Python commands and tests through the virtual environment
 
 ---
 
@@ -218,6 +235,35 @@ CREATE POLICY "Service write" ON wines FOR ALL
 | `update()` | `.update().eq()` | Must specify row filter |
 | Database rules | RLS policies | SQL-based, more powerful |
 
+### Dashboard Auth Patterns
+```javascript
+// CORRECT: Auth check with redirect param
+async function checkAuthAndInit() {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (!session) {
+        window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.pathname.split('/').pop());
+        return;
+    }
+    // Check MFA level
+    const { data: aalData } = await supabaseClient.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aalData.currentLevel !== 'aal2') {
+        window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.pathname.split('/').pop());
+        return;
+    }
+    // Now load data...
+}
+
+// CORRECT: Dynamic back link based on referrer
+const referrer = document.referrer;
+if (referrer.includes('mobile.html')) {
+    document.getElementById('backLink').href = 'mobile.html';
+}
+
+// CORRECT: Container starts hidden, show after auth
+// HTML: <div class="container" id="mainContainer">  (NO "show" class)
+// JS: document.getElementById('mainContainer').classList.add('show');
+```
+
 ---
 
 ## Engineering Principles
@@ -395,9 +441,29 @@ The file `docs/DASHBOARD_INTEGRATION.md` defines the contract between this data 
 
 ## Common Pitfalls
 
+### Data Layer
 1. **Forgetting InStock=0** - Will miss consumed/lost bottles
 2. **Using HTML instead of CSV API** - HTML is for display, use xlquery.asp
 3. **Not batching upserts** - Will timeout with 400+ wines
 4. **Logging passwords** - Security risk, mask in all logs
 5. **Ignoring RLS** - Tables will appear empty without policies
 6. **Not reading PROGRESS.md** - Will lose context between sessions
+7. **Views not filtering in-stock** - Always add `quantity > 0` for user-facing queries (consumed wines don't need enrichment)
+
+### Dashboard Integration
+8. **Missing redirect params** - When redirecting to login, ALWAYS include `?redirect=currentPage.html` or user ends up at wrong page after login
+9. **Login form flash** - Don't show login containers by default; start hidden (`display: none`), show only after auth check fails
+10. **Hardcoded back links** - Use `document.referrer` to dynamically set back links when user could come from multiple pages
+11. **Leftover SDK imports** - When removing Firebase/Supabase, check for leftover `<script>` tags AND all JS code using the old SDK
+
+### Supabase Operations
+12. **Supabase CLI doesn't run raw SQL** - Use Python + Supabase Management API instead:
+```python
+import requests
+response = requests.post(
+    f'https://api.supabase.com/v1/projects/{project_ref}/database/query',
+    headers={'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'},
+    json={'query': sql}
+)
+```
+13. **Python venv on Windows** - Don't use `source .venv/Scripts/activate` in bash; use `python` directly if it's in PATH
