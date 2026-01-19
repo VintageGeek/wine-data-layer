@@ -1,0 +1,69 @@
+# Environment variables (NEVER commit these)
+.env
+.env.local
+.env.*.local
+
+# Data files (large, may contain sensitive info)
+data/raw/
+data/processed/
+data/backups/
+*.csv
+*.json
+!config/*.json
+!package.json
+!package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Testing
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Secrets and credentials
+*.pem
+*.key
+credentials.json
+service-account.json
+
+# Temporary files
+tmp/
+temp/
+*.tmp
